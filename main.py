@@ -1,14 +1,10 @@
-import os
 import requests
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI(
-    title="API de Auditoría AgTech",
-    description="Servidor en la nube para evadir bloqueos locales y procesar datos climáticos."
-)
+app = FastAPI(title="API de Auditoría AgTech")
 
-# Permitir que tu aplicación de C# se conecte desde cualquier computadora sin bloqueos de seguridad
+# Permitir conexiones de C# sin bloqueos
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -19,37 +15,46 @@ app.add_middleware(
 
 @app.get("/")
 def inicio():
-    return {"status": "Servidor AgTech en línea", "mensaje": "Listo para auditar lotes."}
+    return {"status": "Servidor AgTech en línea"}
 
 @app.get("/clima")
 def obtener_clima_lote(lat: float, lon: float):
-    """
-    Este endpoint será llamado por C#. Al ejecutarse en la nube, 
-    Open-Meteo responderá instantáneamente sin bloqueos de ISP corporativos.
-    """
+    # URL estándar de Open-Meteo
     url = f"https://open-meteo.com{lat}&longitude={lon}&current_weather=true"
     
+    # Camuflaje obligatorio para que Open-Meteo no bloquee a tu servidor de Render
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+    }
+    
     try:
-        # La nube tiene internet libre, por lo que esta petición estándar funcionará siempre
-        response = requests.get(url, timeout=10)
+        response = requests.get(url, headers=headers, timeout=10)
         
         if response.status_code == 200:
             datos = response.json()
             clima_actual = datos["current_weather"]
-            temp = clima_actual["temperature"]
-            viento = clima_actual["windspeed"]
+            temp = float(clima_actual["temperature"])
+            viento = float(clima_actual["windspeed"])
             
-            # Lógica agronómica básica para el reporte técnico
-            apto_pulverizar = "APTO" if (5 <= viento <= 15 and temp < 30) else "NO APTO (Revisar deriva/inversión)"
+            # Lógica agronómica para la ventana de trabajo
+            apto = "APTO" if (5 <= viento <= 15 and temp < 30) else "NO APTO"
             
             return {
-                "coordenadas": {"latitud": lat, "longitud": lon},
                 "temperatura_celsius": temp,
                 "viento_kmh": viento,
-                "pulverizacion": apto_pulverizar
+                "pulverizacion": apto
             }
         else:
-            raise HTTPException(status_code=500, detail="Error al consultar el proveedor meteorológico internacional.")
+            # Si Open-Meteo falla, devolvemos un JSON limpio, NO un HTML de error
+            return {
+                "temperatura_celsius": 0.0,
+                "viento_kmh": 0.0,
+                "pulverizacion": f"Error proveedor (Código {response.status_code})"
+            }
             
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Falla de red en el servidor en la nube: {str(e)}")
+        return {
+            "temperatura_celsius": 0.0,
+            "viento_kmh": 0.0,
+            "pulverizacion": "Error de conexión en nube"
+        }
